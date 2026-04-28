@@ -67,23 +67,32 @@ def require_token(f):
     return wrapper
 
 def list_screens() -> list:
+    """List all screen sessions by checking socket directories directly."""
+    screens = []
+    screen_dir = "/run/screen"
+    
     try:
-        output = subprocess.check_output(["screen", "-ls"], stderr=subprocess.STDOUT, text=True)
-        screens = []
-        for line in output.splitlines():
-            parts = line.strip().split()
-            if not parts:
-                continue
-            item = parts[0]
-            if "." in item:
-                screens.append(item)
-        return screens
-    except FileNotFoundError:
-        raise
-    except subprocess.CalledProcessError as e:
-        if "No Sockets found" in e.output:
+        if not os.path.exists(screen_dir):
             return []
-        raise
+        
+        # Iterate through all user socket directories (S-username)
+        for item in os.listdir(screen_dir):
+            user_dir = os.path.join(screen_dir, item)
+            if not item.startswith("S-") or not os.path.isdir(user_dir):
+                continue
+            
+            # List socket files in each user directory
+            try:
+                for socket in os.listdir(user_dir):
+                    if "." in socket:  # Screen session names have format: PID.name
+                        screens.append(socket)
+            except (OSError, PermissionError):
+                # Skip if we can't read this user's directory
+                pass
+        
+        return screens
+    except (OSError, FileNotFoundError):
+        return []
 
 
 def capture_screen_log(screen_name: str, destination: str) -> None:
