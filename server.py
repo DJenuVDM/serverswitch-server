@@ -66,6 +66,32 @@ def require_token(f):
         return f(*args, **kwargs)
     return wrapper
 
+def list_screens() -> list:
+    try:
+        output = subprocess.check_output(["screen", "-ls"], stderr=subprocess.STDOUT, text=True)
+        screens = []
+        for line in output.splitlines():
+            parts = line.strip().split()
+            if not parts:
+                continue
+            item = parts[0]
+            if "." in item:
+                screens.append(item)
+        return screens
+    except FileNotFoundError:
+        raise
+    except subprocess.CalledProcessError as e:
+        if "No Sockets found" in e.output:
+            return []
+        raise
+
+
+def capture_screen_log(screen_name: str, destination: str) -> None:
+    try:
+        subprocess.check_call(["screen", "-S", screen_name, "-X", "hardcopy", "-h", destination])
+    except subprocess.CalledProcessError:
+        subprocess.check_call(["screen", "-S", screen_name, "-X", "hardcopy", destination])
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/ping", methods=["GET"])
@@ -115,6 +141,42 @@ def info():
         })
     except ImportError:
         return jsonify({"status": "on", "error": "psutil not installed"})
+
+
+@app.route("/screens", methods=["GET"])
+@rate_limit(30)
+@require_token
+def screens():
+    try:
+        return jsonify({"screens": list_screens()})
+    except FileNotFoundError:
+        return jsonify({"error": "screen_not_installed"}), 500
+    except subprocess.CalledProcessError as e:
+        return jsonify({"error": "screen_list_failed", "details": str(e)}), 500
+
+
+@app.route("/screens/<path:screen_name>/log", methods=["GET"])
+@rate_limit(10)
+@require_token
+def screen_log(screen_name):
+    try:
+        safe_name = screen_name.replace("..", "_")
+        path = os.path.join("/tmp", f"serverswitch_screen_{safe_name}.log")
+        capture_screen_log(screen_name, path)
+        if not os.path.exists(path):
+            return jsonify({"error": "screen_log_failed"}), 500
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            contents = f.read()
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        return jsonify({"screen": screen_name, "log": contents})
+    except FileNotFoundError:
+        return jsonify({"error": "screen_not_installed"}), 500
+    except subprocess.CalledProcessError as e:
+        return jsonify({"error": "screen_log_failed", "details": str(e)}), 500
+
 
 if __name__ == "__main__":
     config = load_config()
