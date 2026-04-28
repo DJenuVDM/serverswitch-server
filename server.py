@@ -80,12 +80,13 @@ def list_screens() -> list:
             user_dir = os.path.join(screen_dir, item)
             if not item.startswith("S-") or not os.path.isdir(user_dir):
                 continue
+            user = item[2:]
             
             # List socket files in each user directory
             try:
                 for socket in os.listdir(user_dir):
                     if "." in socket:  # Screen session names have format: PID.name
-                        screens.append(socket)
+                        screens.append(f"{user}/{socket}")
             except (OSError, PermissionError):
                 # Skip if we can't read this user's directory
                 pass
@@ -96,10 +97,15 @@ def list_screens() -> list:
 
 
 def capture_screen_log(screen_name: str, destination: str) -> None:
+    env = os.environ.copy()
+    if "/" in screen_name:
+        user, session = screen_name.split("/", 1)
+        env["SCREENDIR"] = os.path.join("/run/screen", f"S-{user}")
+        screen_name = session
     try:
-        subprocess.check_call(["screen", "-S", screen_name, "-X", "hardcopy", "-h", destination])
+        subprocess.check_call(["screen", "-S", screen_name, "-X", "hardcopy", "-h", destination], env=env)
     except subprocess.CalledProcessError:
-        subprocess.check_call(["screen", "-S", screen_name, "-X", "hardcopy", destination])
+        subprocess.check_call(["screen", "-S", screen_name, "-X", "hardcopy", destination], env=env)
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
@@ -169,7 +175,7 @@ def screens():
 @require_token
 def screen_log(screen_name):
     try:
-        safe_name = screen_name.replace("..", "_")
+        safe_name = screen_name.replace("..", "_").replace("/", "_")
         path = os.path.join("/tmp", f"serverswitch_screen_{safe_name}.log")
         capture_screen_log(screen_name, path)
         if not os.path.exists(path):
