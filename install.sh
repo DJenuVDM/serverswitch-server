@@ -88,9 +88,23 @@ mkdir -p "$INSTALL_DIR"
 print_ok "Created $INSTALL_DIR"
 
 print_step "Installing system dependencies"
-apt-get update -qq
-apt-get install -y -qq python3 python3-venv python3-pip
-print_ok "Python installed"
+# Check if packages are already installed
+PACKAGES_TO_CHECK="python3 python3-venv python3-pip"
+PACKAGES_TO_INSTALL=""
+
+for pkg in $PACKAGES_TO_CHECK; do
+    if ! dpkg -l | grep -q "^ii  $pkg "; then
+        PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL $pkg"
+    fi
+done
+
+if [ -n "$PACKAGES_TO_INSTALL" ]; then
+    apt-get update -qq
+    apt-get install -y -qq $PACKAGES_TO_INSTALL
+    print_ok "Python packages installed: $PACKAGES_TO_INSTALL"
+else
+    print_ok "Python packages already installed"
+fi
 
 print_step "Creating Python virtual environment"
 python3 -m venv "$INSTALL_DIR/venv"

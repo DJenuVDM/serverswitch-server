@@ -190,6 +190,10 @@ def screen_log(screen_name):
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             contents = f.read()
         log.info(f"Successfully read {len(contents)} characters from log")
+        # Limit to last 2000 lines to prevent huge responses
+        lines = contents.splitlines()
+        if len(lines) > 2000:
+            contents = "\n".join(lines[-2000:])
         try:
             os.remove(path)
         except OSError:

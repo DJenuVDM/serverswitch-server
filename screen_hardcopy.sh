@@ -19,3 +19,8 @@ fi
 # Only allow hardcopy operations
 screen -S "$SESSION" -X hardcopy -h "$OUTPUT" 2>/dev/null || \
 screen -S "$SESSION" -X hardcopy "$OUTPUT" 2>/dev/null
+
+# Limit output to last 2000 lines if file exists
+if [ -f "$OUTPUT" ]; then
+    tail -n 2000 "$OUTPUT" > "${OUTPUT}.tmp" && mv "${OUTPUT}.tmp" "$OUTPUT"
+fi
