@@ -97,15 +97,34 @@ def list_screens() -> list:
 
 
 def capture_screen_log(screen_name: str, destination: str) -> None:
-    env = os.environ.copy()
     if "/" in screen_name:
         user, session = screen_name.split("/", 1)
-        env["SCREENDIR"] = os.path.join("/run/screen", f"S-{user}")
-        screen_name = session
-    try:
-        subprocess.check_call(["screen", "-S", screen_name, "-X", "hardcopy", "-h", destination], env=env)
-    except subprocess.CalledProcessError:
-        subprocess.check_call(["screen", "-S", screen_name, "-X", "hardcopy", destination], env=env)
+        socket_dir = os.path.join("/run/screen", f"S-{user}")
+        
+        # Temporarily change permissions so root can access
+        try:
+            # Save original permissions
+            stat_info = os.stat(socket_dir)
+            original_mode = stat_info.st_mode
+            
+            # Make directory readable by root
+            os.chmod(socket_dir, 0o755)
+            
+            try:
+                subprocess.check_call(["screen", "-S", session, "-X", "hardcopy", "-h", destination])
+            except subprocess.CalledProcessError:
+                subprocess.check_call(["screen", "-S", session, "-X", "hardcopy", destination])
+            finally:
+                # Restore original permissions
+                os.chmod(socket_dir, original_mode)
+        except (OSError, subprocess.CalledProcessError):
+            raise
+    else:
+        # Fallback for old format
+        try:
+            subprocess.check_call(["screen", "-S", screen_name, "-X", "hardcopy", "-h", destination])
+        except subprocess.CalledProcessError:
+            subprocess.check_call(["screen", "-S", screen_name, "-X", "hardcopy", destination])
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
