@@ -1,0 +1,16 @@
+[Unit]
+Description=ServerSwitch API
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=INSTALL_DIR
+ExecStart=INSTALL_DIR/venv/bin/gunicorn -w 1 -b 0.0.0.0:PORT server:app
+Restart=always
+RestartSec=5
+StandardOutput=append:INSTALL_DIR/serverswitch.log
+StandardError=append:INSTALL_DIR/serverswitch.log
+
+[Install]
+WantedBy=multi-user.target
