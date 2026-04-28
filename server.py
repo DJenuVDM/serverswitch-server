@@ -177,19 +177,24 @@ def screen_log(screen_name):
     try:
         safe_name = screen_name.replace("..", "_").replace("/", "_")
         path = os.path.join("/tmp", f"serverswitch_screen_{safe_name}.log")
+        log.info(f"Attempting to capture log for screen: {screen_name} to path: {path}")
         capture_screen_log(screen_name, path)
         if not os.path.exists(path):
+            log.error(f"Log file not created at {path}")
             return jsonify({"error": "screen_log_failed"}), 500
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             contents = f.read()
+        log.info(f"Successfully read {len(contents)} characters from log")
         try:
             os.remove(path)
         except OSError:
             pass
         return jsonify({"screen": screen_name, "log": contents})
     except FileNotFoundError:
+        log.error(f"screen command not found")
         return jsonify({"error": "screen_not_installed"}), 500
     except subprocess.CalledProcessError as e:
+        log.error(f"screen command failed: {e}")
         return jsonify({"error": "screen_log_failed", "details": str(e)}), 500
 
 
