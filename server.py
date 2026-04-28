@@ -99,33 +99,11 @@ def list_screens() -> list:
 def capture_screen_log(screen_name: str, destination: str) -> None:
     if "/" in screen_name:
         user, session = screen_name.split("/", 1)
-        socket_dir = os.path.join("/run/screen", f"S-{user}")
-        
-        # Temporarily change permissions and ownership so root can access
+        # Use restricted wrapper script as the user (read-only operation)
+        script_path = os.path.join(os.path.dirname(__file__), "screen_hardcopy.sh")
         try:
-            # Save original permissions and ownership
-            stat_info = os.stat(socket_dir)
-            original_mode = stat_info.st_mode
-            original_uid = stat_info.st_uid
-            original_gid = stat_info.st_gid
-            
-            # Change ownership to root:root and permissions to allow access
-            os.chown(socket_dir, 0, 0)  # root:root
-            os.chmod(socket_dir, 0o755)
-            
-            # Set SCREENDIR environment variable
-            env = os.environ.copy()
-            env["SCREENDIR"] = socket_dir
-            
-            try:
-                subprocess.check_call(["screen", "-S", session, "-X", "hardcopy", "-h", destination], env=env)
-            except subprocess.CalledProcessError:
-                subprocess.check_call(["screen", "-S", session, "-X", "hardcopy", destination], env=env)
-            finally:
-                # Restore original permissions and ownership
-                os.chown(socket_dir, original_uid, original_gid)
-                os.chmod(socket_dir, original_mode)
-        except (OSError, subprocess.CalledProcessError):
+            subprocess.check_call(["sudo", "-u", user, script_path, session, destination])
+        except subprocess.CalledProcessError:
             raise
     else:
         # Fallback for old format
