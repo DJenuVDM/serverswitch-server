@@ -6,7 +6,7 @@ so the Android app can check status, shut down, or reboot it remotely over Tails
 ## Install
 
 ```bash
-git clone https://github.com/yourname/serverswitch-server
+git clone https://github.com/DJenuVDM/serverswitch-server
 cd serverswitch-server
 sudo bash install.sh
 ```
