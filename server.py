@@ -110,10 +110,14 @@ def capture_screen_log(screen_name: str, destination: str) -> None:
             # Make directory readable by root
             os.chmod(socket_dir, 0o755)
             
+            # Set SCREENDIR environment variable
+            env = os.environ.copy()
+            env["SCREENDIR"] = socket_dir
+            
             try:
-                subprocess.check_call(["screen", "-S", session, "-X", "hardcopy", "-h", destination])
+                subprocess.check_call(["screen", "-S", session, "-X", "hardcopy", "-h", destination], env=env)
             except subprocess.CalledProcessError:
-                subprocess.check_call(["screen", "-S", session, "-X", "hardcopy", destination])
+                subprocess.check_call(["screen", "-S", session, "-X", "hardcopy", destination], env=env)
             finally:
                 # Restore original permissions
                 os.chmod(socket_dir, original_mode)
