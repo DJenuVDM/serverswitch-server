@@ -25,6 +25,10 @@ systemctl stop serverswitch 2>/dev/null || true
 systemctl disable serverswitch 2>/dev/null || true
 rm -f /etc/systemd/system/serverswitch.service
 systemctl daemon-reload
+
+# Remove sudo rule
+sed -i "\|$INSTALL_DIR/screen_hardcopy.sh|d" /etc/sudoers
+
 rm -rf "$INSTALL_DIR"
 
 echo -e "${GREEN}${BOLD}✓ ServerSwitch uninstalled.${NC}"

@@ -21,13 +21,15 @@ At the end it prints your IP, port, and token — paste those into the Android a
 
 ## Endpoints
 
-| Method | Endpoint    | Auth | Description                        |
-|--------|-------------|------|------------------------------------|
-| GET    | `/status`   | No   | Returns `{"status":"on"}`          |
-| GET    | `/ping`     | No   | Lightweight ping                   |
-| GET    | `/info`     | Yes  | CPU, RAM, disk, uptime             |
-| POST   | `/shutdown` | Yes  | Shuts the server down              |
-| POST   | `/reboot`   | Yes  | Reboots the server                 |
+| Method | Endpoint              | Auth | Description                        |
+|--------|-----------------------|------|------------------------------------|
+| GET    | `/status`             | No   | Returns `{"status":"on"}`          |
+| GET    | `/ping`               | No   | Lightweight ping                   |
+| GET    | `/info`               | Yes  | CPU, RAM, disk, uptime             |
+| GET    | `/screens`            | Yes  | List active screen sessions        |
+| GET    | `/screens/<name>/log` | Yes  | Get logs from a screen session     |
+| POST   | `/shutdown`           | Yes  | Shuts the server down              |
+| POST   | `/reboot`             | Yes  | Reboots the server                 |
 
 Auth = pass your token in the `X-Token` header.
 
