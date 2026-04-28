@@ -101,13 +101,16 @@ def capture_screen_log(screen_name: str, destination: str) -> None:
         user, session = screen_name.split("/", 1)
         socket_dir = os.path.join("/run/screen", f"S-{user}")
         
-        # Temporarily change permissions so root can access
+        # Temporarily change permissions and ownership so root can access
         try:
-            # Save original permissions
+            # Save original permissions and ownership
             stat_info = os.stat(socket_dir)
             original_mode = stat_info.st_mode
+            original_uid = stat_info.st_uid
+            original_gid = stat_info.st_gid
             
-            # Make directory readable by root
+            # Change ownership to root:root and permissions to allow access
+            os.chown(socket_dir, 0, 0)  # root:root
             os.chmod(socket_dir, 0o755)
             
             # Set SCREENDIR environment variable
@@ -119,7 +122,8 @@ def capture_screen_log(screen_name: str, destination: str) -> None:
             except subprocess.CalledProcessError:
                 subprocess.check_call(["screen", "-S", session, "-X", "hardcopy", destination], env=env)
             finally:
-                # Restore original permissions
+                # Restore original permissions and ownership
+                os.chown(socket_dir, original_uid, original_gid)
                 os.chmod(socket_dir, original_mode)
         except (OSError, subprocess.CalledProcessError):
             raise
