@@ -11,8 +11,14 @@ SESSION="$1"
 COMMAND="$2"
 
 # Validate inputs
-if [[ "$SESSION" =~ [^a-zA-Z0-9._-] ]] || [[ "$COMMAND" =~ [^a-zA-Z0-9._/\-+=@:% ] ]]; then
-    echo "Invalid characters in session name or command"
+if [[ "$SESSION" =~ [^a-zA-Z0-9._-] ]]; then
+    echo "Invalid session name"
+    exit 1
+fi
+
+# Disallow newline injection
+if [[ "$COMMAND" =~ [\n\r\t] ]]; then
+    echo "Invalid command characters"
     exit 1
 fi
 
