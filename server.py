@@ -35,20 +35,20 @@ logging.basicConfig(
 )
 log = logging.getLogger("serverswitch")
 
-# ── Rate limiting (max 10 requests/min per IP) ────────────────────────────────
+# ── Rate limiting — keyed per IP+endpoint so endpoints don't share buckets ────
 request_counts = defaultdict(list)
 
 def rate_limit(max_per_minute=10):
     def decorator(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
-            ip = request.remote_addr
+            key = f"{request.remote_addr}:{f.__name__}"
             now = time.time()
-            request_counts[ip] = [t for t in request_counts[ip] if now - t < 60]
-            if len(request_counts[ip]) >= max_per_minute:
-                log.warning(f"Rate limit hit from {ip}")
+            request_counts[key] = [t for t in request_counts[key] if now - t < 60]
+            if len(request_counts[key]) >= max_per_minute:
+                log.warning(f"Rate limit hit from {request.remote_addr} on {f.__name__}")
                 return jsonify({"error": "rate_limited"}), 429
-            request_counts[ip].append(now)
+            request_counts[key].append(now)
             return f(*args, **kwargs)
         return wrapper
     return decorator
@@ -213,7 +213,7 @@ def screen_command(screen_name):
 
 
 @app.route("/screens/<path:screen_name>/log", methods=["GET"])
-@rate_limit(10)
+@rate_limit(30)
 @require_token
 def screen_log(screen_name):
     try:
@@ -242,12 +242,6 @@ def screen_log(screen_name):
         log.error(f"screen command failed: {e}")
         return jsonify({"error": "screen_log_failed", "details": str(e)}), 500
 
-
-if __name__ == "__main__":
-    config = load_config()
-    port = int(config.get("PORT", 5050))
-    log.info(f"ServerSwitch starting on port {port}")
-    app.run(host="0.0.0.0", port=port)
 
 @app.route("/screens/<path:screen_name>/log/tail", methods=["GET"])
 @rate_limit(60)
@@ -280,3 +274,10 @@ def screen_log_tail(screen_name):
     except subprocess.CalledProcessError as e:
         log.error(f"screen tail failed: {e}")
         return jsonify({"error": "screen_log_failed", "details": str(e)}), 500
+
+
+if __name__ == "__main__":
+    config = load_config()
+    port = int(config.get("PORT", 5050))
+    log.info(f"ServerSwitch starting on port {port}")
+    app.run(host="0.0.0.0", port=port)
