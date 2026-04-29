@@ -248,3 +248,35 @@ if __name__ == "__main__":
     port = int(config.get("PORT", 5050))
     log.info(f"ServerSwitch starting on port {port}")
     app.run(host="0.0.0.0", port=port)
+
+@app.route("/screens/<path:screen_name>/log/tail", methods=["GET"])
+@rate_limit(60)
+@require_token
+def screen_log_tail(screen_name):
+    """Return only new lines since a given line offset.
+       Query param: ?offset=N  (pass 0 on first call, then pass the returned next_offset each time)
+    """
+    try:
+        offset = int(request.args.get("offset", 0))
+        safe_name = screen_name.replace("..", "_").replace("/", "_")
+        path = os.path.join("/tmp", f"serverswitch_screen_{safe_name}.log")
+        capture_screen_log(screen_name, path)
+        if not os.path.exists(path):
+            return jsonify({"error": "screen_log_failed"}), 500
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        new_lines = lines[offset:]
+        return jsonify({
+            "screen": screen_name,
+            "new_lines": new_lines,
+            "next_offset": len(lines)
+        })
+    except (ValueError, TypeError):
+        return jsonify({"error": "invalid_offset"}), 400
+    except subprocess.CalledProcessError as e:
+        log.error(f"screen tail failed: {e}")
+        return jsonify({"error": "screen_log_failed", "details": str(e)}), 500
