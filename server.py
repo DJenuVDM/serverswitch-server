@@ -70,27 +70,24 @@ def list_screens() -> list:
     """List all screen sessions by checking socket directories directly."""
     screens = []
     screen_dir = "/run/screen"
-    
+
     try:
         if not os.path.exists(screen_dir):
             return []
-        
-        # Iterate through all user socket directories (S-username)
+
         for item in os.listdir(screen_dir):
             user_dir = os.path.join(screen_dir, item)
             if not item.startswith("S-") or not os.path.isdir(user_dir):
                 continue
             user = item[2:]
-            
-            # List socket files in each user directory
+
             try:
                 for socket in os.listdir(user_dir):
-                    if "." in socket:  # Screen session names have format: PID.name
+                    if "." in socket:
                         screens.append(f"{user}/{socket}")
             except (OSError, PermissionError):
-                # Skip if we can't read this user's directory
                 pass
-        
+
         return screens
     except (OSError, FileNotFoundError):
         return []
@@ -99,25 +96,122 @@ def list_screens() -> list:
 def capture_screen_log(screen_name: str, destination: str) -> None:
     if "/" in screen_name:
         user, session = screen_name.split("/", 1)
-        # Use restricted wrapper script as the user (read-only operation)
         script_path = os.path.join(os.path.dirname(__file__), "screen_hardcopy.sh")
         try:
             subprocess.check_call(["sudo", "-u", user, script_path, session, destination])
         except subprocess.CalledProcessError:
             raise
     else:
-        # Fallback for old format
         try:
             subprocess.check_call(["screen", "-S", screen_name, "-X", "hardcopy", "-h", destination])
         except subprocess.CalledProcessError:
             subprocess.check_call(["screen", "-S", screen_name, "-X", "hardcopy", destination])
+
+
+def get_persistent_log_path(screen_name: str) -> str:
+    """
+    Returns the path to a persistent append-only log file for a screen session.
+    Unlike the hardcopy temp file, this file is never deleted between polls —
+    new hardcopy snapshots are diffed against it and new lines are appended.
+    """
+    safe_name = screen_name.replace("..", "_").replace("/", "_")
+    return os.path.join("/tmp", f"serverswitch_persist_{safe_name}.log")
+
+
+def update_persistent_log(screen_name: str) -> list:
+    """
+    Takes a fresh hardcopy snapshot, diffs it against the persistent log,
+    appends any genuinely new lines, and returns the full list of all lines
+    seen so far.
+
+    The core insight: hardcopy -h always dumps a fixed-size scrollback window.
+    The window slides forward as new output arrives, so new lines appear at the
+    bottom and old lines fall off the top. We detect new lines by comparing the
+    tail of the snapshot to the tail of what we already have, then appending
+    whatever is new.
+    """
+    safe_name = screen_name.replace("..", "_").replace("/", "_")
+    snap_path = os.path.join("/tmp", f"serverswitch_snap_{safe_name}.log")
+    persist_path = get_persistent_log_path(screen_name)
+
+    # Take a fresh hardcopy snapshot
+    capture_screen_log(screen_name, snap_path)
+    if not os.path.exists(snap_path):
+        raise FileNotFoundError(f"Snapshot not created at {snap_path}")
+
+    with open(snap_path, "r", encoding="utf-8", errors="replace") as f:
+        snap_lines = [l.rstrip() for l in f.read().splitlines()]
+
+    try:
+        os.remove(snap_path)
+    except OSError:
+        pass
+
+    # Strip blank trailing lines that hardcopy pads with
+    while snap_lines and not snap_lines[-1].strip():
+        snap_lines.pop()
+
+    # Load existing persistent log
+    if os.path.exists(persist_path):
+        with open(persist_path, "r", encoding="utf-8", errors="replace") as f:
+            persist_lines = [l.rstrip() for l in f.read().splitlines()]
+    else:
+        persist_lines = []
+
+    if not snap_lines:
+        return persist_lines
+
+    if not persist_lines:
+        # First time — seed the persistent log with the full snapshot
+        with open(persist_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(snap_lines) + "\n")
+        return snap_lines
+
+    # Find where the snapshot overlaps with the end of the persistent log.
+    # We look for the longest suffix of persist_lines that matches a prefix
+    # of snap_lines, so we can find where new lines begin.
+    #
+    # Example:
+    #   persist: [A, B, C, D, E]
+    #   snap:    [C, D, E, F, G]   ← scrollback window slid forward
+    #   overlap starts at snap index 0 (C matches persist[-3])
+    #   new lines: [F, G]
+
+    new_lines = []
+    max_overlap = min(len(persist_lines), len(snap_lines))
+
+    overlap_start = None
+    for overlap_len in range(max_overlap, 0, -1):
+        if persist_lines[-overlap_len:] == snap_lines[:overlap_len]:
+            overlap_start = overlap_len
+            break
+
+    if overlap_start is not None:
+        new_lines = snap_lines[overlap_start:]
+    else:
+        # No overlap found — the scrollback has scrolled past everything we
+        # had. Append the entire snapshot as new content.
+        new_lines = snap_lines
+
+    if new_lines:
+        with open(persist_path, "a", encoding="utf-8") as f:
+            f.write("\n".join(new_lines) + "\n")
+        persist_lines.extend(new_lines)
+
+    # Cap the persistent log to 5000 lines so it doesn't grow forever
+    if len(persist_lines) > 5000:
+        persist_lines = persist_lines[-5000:]
+        with open(persist_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(persist_lines) + "\n")
+
+    return persist_lines
+
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/ping", methods=["GET"])
 @rate_limit(60)
 def ping():
-    """Lightweight status check"""
     return jsonify({"status": "on"})
 
 @app.route("/status", methods=["GET"])
@@ -145,7 +239,6 @@ def reboot():
 @rate_limit(30)
 @require_token
 def info():
-    """Returns system stats"""
     try:
         import psutil
         return jsonify({
@@ -188,7 +281,6 @@ def screen_command(screen_name):
         if not isinstance(command, str) or len(command) > 1000:
             return jsonify({"error": "invalid_command"}), 400
 
-        # Sanitize command - remove dangerous characters
         command = command.replace("\n", "").replace("\r", "").replace("\t", " ")
 
         script_path = os.path.join(os.path.dirname(__file__), "screen_command.sh")
@@ -216,27 +308,13 @@ def screen_command(screen_name):
 @rate_limit(30)
 @require_token
 def screen_log(screen_name):
+    """Returns the full accumulated log for a screen session."""
     try:
-        safe_name = screen_name.replace("..", "_").replace("/", "_")
-        path = os.path.join("/tmp", f"serverswitch_screen_{safe_name}.log")
-        log.info(f"Attempting to capture log for screen: {screen_name} to path: {path}")
-        capture_screen_log(screen_name, path)
-        if not os.path.exists(path):
-            log.error(f"Log file not created at {path}")
-            return jsonify({"error": "screen_log_failed"}), 500
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
-            contents = f.read()
-        log.info(f"Successfully read {len(contents)} characters from log")
-        lines = contents.splitlines()
-        if len(lines) > 2000:
-            contents = "\n".join(lines[-2000:])
-        try:
-            os.remove(path)
-        except OSError:
-            pass
+        all_lines = update_persistent_log(screen_name)
+        contents = "\n".join(all_lines)
         return jsonify({"screen": screen_name, "log": contents})
     except FileNotFoundError:
-        log.error(f"screen command not found")
+        log.error("screen command not found")
         return jsonify({"error": "screen_not_installed"}), 500
     except subprocess.CalledProcessError as e:
         log.error(f"screen command failed: {e}")
@@ -247,30 +325,28 @@ def screen_log(screen_name):
 @rate_limit(60)
 @require_token
 def screen_log_tail(screen_name):
-    """Return only new lines since a given line offset.
-       Query param: ?offset=N  (pass 0 on first call, then pass the returned next_offset each time)
+    """
+    Return only new lines since a given line offset.
+    Query param: ?offset=N  (pass 0 on first call, then pass returned next_offset each time)
+
+    Uses a persistent append-only log so the offset is stable across polls —
+    unlike the old approach where hardcopy always returned a fixed-size window
+    and the offset would never advance past the buffer size.
     """
     try:
         offset = int(request.args.get("offset", 0))
-        safe_name = screen_name.replace("..", "_").replace("/", "_")
-        path = os.path.join("/tmp", f"serverswitch_screen_{safe_name}.log")
-        capture_screen_log(screen_name, path)
-        if not os.path.exists(path):
-            return jsonify({"error": "screen_log_failed"}), 500
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
-            lines = f.read().splitlines()
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-        new_lines = lines[offset:]
+        all_lines = update_persistent_log(screen_name)
+        new_lines = all_lines[offset:]
         return jsonify({
             "screen": screen_name,
             "new_lines": new_lines,
-            "next_offset": len(lines)
+            "next_offset": len(all_lines)
         })
     except (ValueError, TypeError):
         return jsonify({"error": "invalid_offset"}), 400
+    except FileNotFoundError:
+        log.error("screen command not found")
+        return jsonify({"error": "screen_not_installed"}), 500
     except subprocess.CalledProcessError as e:
         log.error(f"screen tail failed: {e}")
         return jsonify({"error": "screen_log_failed", "details": str(e)}), 500
