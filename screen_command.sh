@@ -17,7 +17,7 @@ if [[ "$SESSION" =~ [^a-zA-Z0-9._-] ]]; then
 fi
 
 # Disallow newline injection
-if [[ "$COMMAND" =~ [\n\r\t] ]]; then
+if [[ "$COMMAND" == *$'\n'* || "$COMMAND" == *$'\r'* || "$COMMAND" == *$'\t'* ]]; then
     echo "Invalid command characters"
     exit 1
 fi
