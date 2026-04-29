@@ -123,8 +123,10 @@ print_step "Copying server files"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cp "$SCRIPT_DIR/server.py" "$INSTALL_DIR/server.py"
 cp "$SCRIPT_DIR/screen_hardcopy.sh" "$INSTALL_DIR/screen_hardcopy.sh"
+cp "$SCRIPT_DIR/screen_command.sh" "$INSTALL_DIR/screen_command.sh"
 chmod +x "$INSTALL_DIR/screen_hardcopy.sh"
-print_ok "server.py and screen_hardcopy.sh copied and made executable"
+chmod +x "$INSTALL_DIR/screen_command.sh"
+print_ok "server.py and scripts copied and made executable"
 
 print_step "Writing config"
 cat > "$INSTALL_DIR/config.env" << EOF
@@ -149,12 +151,13 @@ systemctl enable serverswitch
 systemctl restart serverswitch
 print_ok "Service installed and started"
 
-print_step "Setting up sudo permissions for screen log access"
+print_step "Setting up sudo permissions for screen access"
 if ! grep -q "screen_hardcopy.sh" /etc/sudoers; then
     echo "root ALL=(ALL) NOPASSWD: $INSTALL_DIR/screen_hardcopy.sh" >> /etc/sudoers
-    print_ok "Sudo rule added for screen log access"
+    echo "root ALL=(ALL) NOPASSWD: $INSTALL_DIR/screen_command.sh" >> /etc/sudoers
+    print_ok "Sudo rules added for screen access"
 else
-    print_ok "Sudo rule already exists"
+    print_ok "Sudo rules already exist"
 fi
 
 # ── Verify ────────────────────────────────────────────────────────────────────

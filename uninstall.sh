@@ -26,8 +26,9 @@ systemctl disable serverswitch 2>/dev/null || true
 rm -f /etc/systemd/system/serverswitch.service
 systemctl daemon-reload
 
-# Remove sudo rule
+# Remove sudo rules
 sed -i "\|$INSTALL_DIR/screen_hardcopy.sh|d" /etc/sudoers
+sed -i "\|$INSTALL_DIR/screen_command.sh|d" /etc/sudoers
 
 rm -rf "$INSTALL_DIR"
 

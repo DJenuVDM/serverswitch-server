@@ -175,10 +175,42 @@ def screens():
         return jsonify({"error": "screen_list_failed", "details": str(e)}), 500
 
 
-@app.route("/screens/<path:screen_name>/log", methods=["GET"])
-@rate_limit(10)
+@app.route("/screens/<path:screen_name>/command", methods=["POST"])
+@rate_limit(20)
 @require_token
-def screen_log(screen_name):
+def screen_command(screen_name):
+    try:
+        data = request.get_json()
+        if not data or "command" not in data:
+            return jsonify({"error": "missing_command"}), 400
+        
+        command = data["command"]
+        if not isinstance(command, str) or len(command) > 1000:
+            return jsonify({"error": "invalid_command"}), 400
+        
+        # Sanitize command - remove dangerous characters
+        command = command.replace("\n", "").replace("\r", "").replace("\t", " ")
+        
+        safe_name = screen_name.replace("..", "_").replace("/", "_")
+        script_path = os.path.join(os.path.dirname(__file__), "screen_command.sh")
+        
+        # Run command as the user who owns the session
+        if "/" in screen_name:
+            user, session = screen_name.split("/", 1)
+            subprocess.run(["sudo", "-u", user, script_path, session, command], 
+                         check=True, capture_output=True, text=True)
+        else:
+            return jsonify({"error": "invalid_screen_name"}), 400
+        
+        log.info(f"Executed command in screen {screen_name}: {command}")
+        return jsonify({"status": "command_sent"})
+        
+    except subprocess.CalledProcessError as e:
+        log.error(f"Screen command failed: {e}")
+        return jsonify({"error": "command_failed", "details": str(e)}), 500
+    except Exception as e:
+        log.error(f"Screen command error: {e}")
+        return jsonify({"error": "command_error"}), 500
     try:
         safe_name = screen_name.replace("..", "_").replace("/", "_")
         path = os.path.join("/tmp", f"serverswitch_screen_{safe_name}.log")

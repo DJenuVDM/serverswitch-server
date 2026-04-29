@@ -28,10 +28,26 @@ At the end it prints your IP, port, and token — paste those into the Android a
 | GET    | `/info`               | Yes  | CPU, RAM, disk, uptime             |
 | GET    | `/screens`            | Yes  | List active screen sessions        |
 | GET    | `/screens/<name>/log` | Yes  | Get logs from a screen session     |
+| POST   | `/screens/<name>/command` | Yes  | Send command to a screen session   |
 | POST   | `/shutdown`           | Yes  | Shuts the server down              |
 | POST   | `/reboot`             | Yes  | Reboots the server                 |
 
 Auth = pass your token in the `X-Token` header.
+
+## Update from GitHub
+
+To update an existing installation with the latest changes:
+
+```bash
+sudo bash update.sh
+```
+
+The script will:
+- Backup your current config
+- Download the latest version from GitHub
+- Update all server files
+- Restore your config
+- Restart the service
 
 ## Useful commands
 
@@ -45,9 +61,8 @@ tail -f /opt/serverswitch/serverswitch.log
 # Restart
 sudo systemctl restart serverswitch
 
-# Edit config (token, port)
-sudo nano /opt/serverswitch/config.env
-sudo systemctl restart serverswitch
+# Update from GitHub
+sudo bash update.sh
 ```
 
 ## Uninstall
