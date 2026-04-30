@@ -88,7 +88,6 @@ mkdir -p "$INSTALL_DIR"
 print_ok "Created $INSTALL_DIR"
 
 print_step "Installing system dependencies"
-# Check if packages are already installed
 PACKAGES_TO_CHECK="python3 python3-venv python3-pip"
 PACKAGES_TO_INSTALL=""
 
@@ -121,12 +120,24 @@ fi
 
 print_step "Copying server files"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cp "$SCRIPT_DIR/server.py" "$INSTALL_DIR/server.py"
-cp "$SCRIPT_DIR/screen_hardcopy.sh" "$INSTALL_DIR/screen_hardcopy.sh"
-cp "$SCRIPT_DIR/screen_command.sh" "$INSTALL_DIR/screen_command.sh"
+cp "$SCRIPT_DIR/server.py"           "$INSTALL_DIR/server.py"
+cp "$SCRIPT_DIR/screen_hardcopy.sh"  "$INSTALL_DIR/screen_hardcopy.sh"
+cp "$SCRIPT_DIR/screen_command.sh"   "$INSTALL_DIR/screen_command.sh"
 chmod +x "$INSTALL_DIR/screen_hardcopy.sh"
 chmod +x "$INSTALL_DIR/screen_command.sh"
-print_ok "server.py and scripts copied and made executable"
+print_ok "server.py and helper scripts copied"
+
+print_step "Creating scripts directory"
+mkdir -p "$INSTALL_DIR/scripts"
+# Copy any .sh files bundled alongside the installer into scripts/
+BUNDLED=$(find "$SCRIPT_DIR/scripts" -maxdepth 1 -type f 2>/dev/null | wc -l)
+if [ "$BUNDLED" -gt 0 ]; then
+    cp "$SCRIPT_DIR/scripts/"* "$INSTALL_DIR/scripts/"
+    chmod +x "$INSTALL_DIR/scripts/"*
+    print_ok "Copied $BUNDLED bundled script(s) into $INSTALL_DIR/scripts/"
+else
+    print_ok "scripts/ directory created — drop your scripts in $INSTALL_DIR/scripts/"
+fi
 
 print_step "Writing config"
 cat > "$INSTALL_DIR/config.env" << EOF
@@ -154,7 +165,7 @@ print_ok "Service installed and started"
 print_step "Setting up sudo permissions for screen access"
 if ! grep -q "screen_hardcopy.sh" /etc/sudoers; then
     echo "root ALL=(ALL) NOPASSWD: $INSTALL_DIR/screen_hardcopy.sh" >> /etc/sudoers
-    echo "root ALL=(ALL) NOPASSWD: $INSTALL_DIR/screen_command.sh" >> /etc/sudoers
+    echo "root ALL=(ALL) NOPASSWD: $INSTALL_DIR/screen_command.sh"  >> /etc/sudoers
     print_ok "Sudo rules added for screen access"
 else
     print_ok "Sudo rules already exist"
@@ -174,9 +185,14 @@ echo ""
 echo "─────────────────────────────────────────────────────"
 echo -e "  ${GREEN}${BOLD}✓ ServerSwitch installed successfully!${NC}"
 echo ""
-echo -e "  Status : ${BOLD}systemctl status serverswitch${NC}"
-echo -e "  Logs   : ${BOLD}tail -f $INSTALL_DIR/serverswitch.log${NC}"
-echo -e "  Test   : ${BOLD}curl http://localhost:$PORT/status${NC}"
+echo -e "  Status  : ${BOLD}systemctl status serverswitch${NC}"
+echo -e "  Logs    : ${BOLD}tail -f $INSTALL_DIR/serverswitch.log${NC}"
+echo -e "  Test    : ${BOLD}curl http://localhost:$PORT/status${NC}"
+echo -e "  Scripts : ${BOLD}$INSTALL_DIR/scripts/${NC}"
+echo ""
+echo -e "  ${YELLOW}To add a custom script:${NC}"
+echo -e "  cp myscript.sh $INSTALL_DIR/scripts/"
+echo -e "  chmod +x $INSTALL_DIR/scripts/myscript.sh"
 echo ""
 echo -e "  ${YELLOW}Add this to your ServerSwitch Android app:${NC}"
 echo -e "  IP    : $(hostname -I | awk '{print $1}')"

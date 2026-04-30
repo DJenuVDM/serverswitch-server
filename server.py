@@ -357,3 +357,77 @@ if __name__ == "__main__":
     port = int(config.get("PORT", 5050))
     log.info(f"ServerSwitch starting on port {port}")
     app.run(host="0.0.0.0", port=port)
+
+# ── Script management ─────────────────────────────────────────────────────────
+
+SCRIPTS_DIR = os.path.join(os.path.dirname(__file__), "scripts")
+
+
+def _get_scripts() -> list:
+    """Return sorted list of executable files in the scripts/ directory."""
+    if not os.path.isdir(SCRIPTS_DIR):
+        return []
+    result = []
+    for name in sorted(os.listdir(SCRIPTS_DIR)):
+        path = os.path.join(SCRIPTS_DIR, name)
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            result.append(name)
+    return result
+
+
+@app.route("/scripts", methods=["GET"])
+@rate_limit(30)
+@require_token
+def list_scripts():
+    """List all executable scripts in the scripts/ directory."""
+    return jsonify({"scripts": _get_scripts()})
+
+
+@app.route("/scripts/run/<script_name>", methods=["POST"])
+@rate_limit(10)
+@require_token
+def run_script(script_name):
+    """
+    Run a script from the scripts/ directory.
+
+    JSON body (all optional):
+      args        – list of string arguments passed to the script
+      screen_name – if provided, the script is launched inside a detached
+                    screen session with this name
+    """
+    import re
+    try:
+        if not script_name or "/" in script_name or ".." in script_name:
+            return jsonify({"error": "invalid_script_name"}), 400
+
+        script_path = os.path.join(SCRIPTS_DIR, script_name)
+        if not os.path.isfile(script_path) or not os.access(script_path, os.X_OK):
+            return jsonify({"error": "script_not_found"}), 404
+
+        data = request.get_json(silent=True) or {}
+        args = data.get("args", [])
+        screen_name = data.get("screen_name", "").strip()
+
+        if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
+            return jsonify({"error": "invalid_args"}), 400
+        if len(args) > 64:
+            return jsonify({"error": "too_many_args"}), 400
+        for a in args:
+            if len(a) > 500:
+                return jsonify({"error": "arg_too_long"}), 400
+
+        if screen_name:
+            if not re.match(r'^[a-zA-Z0-9_-]{1,64}$', screen_name):
+                return jsonify({"error": "invalid_screen_name"}), 400
+            cmd = ["screen", "-dmS", screen_name, script_path] + args
+            subprocess.Popen(cmd)
+            log.info(f"Script '{script_name}' launched in screen '{screen_name}' from {request.remote_addr}")
+        else:
+            subprocess.Popen([script_path] + args)
+            log.info(f"Script '{script_name}' launched from {request.remote_addr}")
+
+        return jsonify({"status": "started", "script": script_name, "screen": screen_name or None})
+
+    except Exception as e:
+        log.error(f"run_script error: {e}")
+        return jsonify({"error": "run_failed", "details": str(e)}), 500
