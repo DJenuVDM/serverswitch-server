@@ -419,7 +419,19 @@ def run_script(script_name):
         if screen_name:
             if not re.match(r'^[a-zA-Z0-9_-]{1,64}$', screen_name):
                 return jsonify({"error": "invalid_screen_name"}), 400
-            cmd = ["screen", "-dmS", screen_name, script_path] + args
+
+            # Resolve screen binary — systemd runs with a stripped PATH so we
+            # check common install locations explicitly if which() fails.
+            import shutil
+            screen_bin = shutil.which("screen") or next(
+                (p for p in ["/usr/bin/screen", "/bin/screen", "/usr/local/bin/screen"]
+                 if os.path.isfile(p)), None)
+            if not screen_bin:
+                log.error("screen binary not found — install it with: sudo apt install screen")
+                return jsonify({"error": "screen_not_installed",
+                                "details": "screen binary not found on this server"}), 500
+
+            cmd = [screen_bin, "-dmS", screen_name, script_path] + args
             subprocess.Popen(cmd)
             log.info(f"Script '{script_name}' launched in screen '{screen_name}' from {request.remote_addr}")
         else:
